@@ -133,20 +133,39 @@ def wacc_calc(ke, kd_pre_tax, tax, equity_value, debt):
     return {"wacc": we * ke + wd * kd, "we": we, "wd": wd, "kd_after_tax": kd}
 
 
+def discount_periods(n, stub=1.0, mid_year=False):
+    """Discount periods (in years) for each forecast year.
+
+    stub      : fraction of the first forecast year still ahead of the valuation date (1.0 = full year,
+                i.e. valuation at the start of the fiscal year - the Excel / course convention)
+    mid_year  : cash flows arrive in the middle of each period instead of at its end
+    Returns (cash-flow periods, end-of-period times). The terminal value is discounted from the end of the final year.
+    """
+    ends = np.array([stub + i for i in range(n)], dtype=float)
+    if not mid_year:
+        return ends, ends
+    lengths = np.array([stub] + [1.0] * (n - 1))
+    return ends - lengths / 2, ends
+
+
 def dcf_valuation(rev0, growth, ebit_margin, tax, da_pct, capex_pct, nwc_pct, one_off,
-                  wacc, g, net_cash, shares, base_year):
+                  wacc, g, net_cash, shares, base_year, stub=1.0, mid_year=False):
     """Five-to-ten-year FCFF DCF.
 
     growth, ebit_margin, tax, one_off : lists, one value per forecast year
     one_off   : cash costs such as restructuring (negative numbers), excluded from terminal value
-    net_cash  : cash minus debt (negative if net debt)
+    net_cash  : equity bridge = cash - debt - other debt-like items (+ non-operating assets)
+    stub      : share of year 1 still to come (year-1 cash flow is scaled by it); 1.0 = Excel convention
+    mid_year  : mid-year discounting convention
     FCFF = EBIT x (1 - tax) + D&A - capex - increase in NWC + one-off cash items
     Terminal value = (final-year FCFF excl. one-offs) x (1 + g) / (WACC - g)
     """
     if wacc <= g:
         raise ValueError("WACC must be higher than terminal growth.")
+    n = len(growth)
+    t_cf, t_end = discount_periods(n, stub, mid_year)
     rows, rev, pv = [], rev0, 0.0
-    for t in range(len(growth)):
+    for t in range(n):
         prev = rev
         rev = prev * (1 + growth[t])
         ebit = rev * ebit_margin[t]
@@ -156,13 +175,15 @@ def dcf_valuation(rev0, growth, ebit_margin, tax, da_pct, capex_pct, nwc_pct, on
         capex = -rev * capex_pct
         d_nwc = -(rev - prev) * nwc_pct
         fcff = nopat + da + capex + d_nwc + one_off[t]
-        disc = 1 / (1 + wacc) ** (t + 1)
-        pv += fcff * disc
+        fcff_counted = fcff * (stub if t == 0 else 1.0)
+        disc = 1 / (1 + wacc) ** t_cf[t]
+        pv += fcff_counted * disc
         rows.append({"Year": base_year + t + 1, "Revenue": rev, "Revenue growth": growth[t], "EBIT margin": ebit_margin[t],
                      "EBIT": ebit, "Taxes": taxes, "NOPAT": nopat, "D&A": da, "Capex": capex, "Change in NWC": d_nwc,
-                     "One-off cash costs": one_off[t], "FCFF": fcff, "Discount factor": disc, "PV of FCFF": fcff * disc})
+                     "One-off cash costs": one_off[t], "FCFF": fcff, "Discount period": t_cf[t], "Discount factor": disc,
+                     "PV of FCFF": fcff_counted * disc})
     tv = (fcff - one_off[-1]) * (1 + g) / (wacc - g)
-    pv_tv = tv * disc
+    pv_tv = tv / (1 + wacc) ** t_end[-1]
     ev = pv + pv_tv
     equity = ev + net_cash
     return {"table": pd.DataFrame(rows), "pv_fcff": pv, "terminal_value": tv, "pv_tv": pv_tv, "ev": ev,
@@ -173,7 +194,8 @@ def dcf_valuation(rev0, growth, ebit_margin, tax, da_pct, capex_pct, nwc_pct, on
 # ---------------------------------------------------------------------------
 # Vectorised DCF (for Monte Carlo) and helper analyses
 # ---------------------------------------------------------------------------
-def dcf_vectorized(rev0, growth, ebit_margin, tax, da_pct, capex_pct, nwc_pct, one_off, wacc, g, net_cash, shares):
+def dcf_vectorized(rev0, growth, ebit_margin, tax, da_pct, capex_pct, nwc_pct, one_off, wacc, g, net_cash, shares,
+                   stub=1.0, mid_year=False):
     """Same maths as dcf_valuation, for many simulations at once.
 
     growth, ebit_margin : arrays (n_sims x years);  tax, one_off : arrays (years,)
@@ -186,10 +208,12 @@ def dcf_vectorized(rev0, growth, ebit_margin, tax, da_pct, capex_pct, nwc_pct, o
     rev = rev0 * np.cumprod(1 + growth, axis=1)
     prev = np.hstack([np.full((rev.shape[0], 1), rev0), rev[:, :-1]])
     fcff = rev * ebit_margin * (1 - tax) + rev * da_pct - rev * capex_pct - (rev - prev) * nwc_pct + one_off
-    t = np.arange(1, rev.shape[1] + 1)
-    disc = (1 + wacc)[:, None] ** (-t)
+    t_cf, t_end = discount_periods(rev.shape[1], stub, mid_year)
+    weight = np.ones(rev.shape[1])
+    weight[0] = stub
+    disc = (1 + wacc)[:, None] ** (-t_cf)
     tv = (fcff[:, -1] - one_off[-1]) * (1 + g) / (wacc - g)
-    return ((fcff * disc).sum(axis=1) + tv * disc[:, -1] + net_cash) / shares
+    return ((fcff * weight * disc).sum(axis=1) + tv * (1 + wacc) ** (-t_end[-1]) + net_cash) / shares
 
 
 def monte_carlo(dcf_kwargs, n=3000, sd_growth=0.02, sd_margin=0.015, sd_wacc=0.0075, sd_g=0.005, seed=42):
@@ -203,7 +227,8 @@ def monte_carlo(dcf_kwargs, n=3000, sd_growth=0.02, sd_margin=0.015, sd_wacc=0.0
     tg = k["g"] + rng.normal(0, sd_g, n)
     ok = (w - tg) > 0.005
     vals = dcf_vectorized(k["rev0"], gr[None, :] + dg[ok, None], mr[None, :] + dm[ok, None], k["tax"], k["da_pct"],
-                          k["capex_pct"], k["nwc_pct"], k["one_off"], w[ok], tg[ok], k["net_cash"], k["shares"])
+                          k["capex_pct"], k["nwc_pct"], k["one_off"], w[ok], tg[ok], k["net_cash"], k["shares"],
+                          k.get("stub", 1.0), k.get("mid_year", False))
     return vals
 
 

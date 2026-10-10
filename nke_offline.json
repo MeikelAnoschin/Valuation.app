@@ -1,0 +1,235 @@
+{
+ "as_of": "2026-10-09",
+ "note": "Offline data set for NIKE, Inc. used in the Team 10 report (fiscal years end 31 May; USD millions unless stated).",
+ "sources": [
+  "Nike 10-K FY2024-FY2026 (income statement, balance sheet; via Team 10 Phase I model)",
+  "Cash flow items: stock-analysis-on.net (Nike consolidated statements of cash flows)",
+  "Market data, consensus and peer multiples: stockanalysis.com, 7-9 Oct 2026",
+  "Q1 FY27 (Jun-Aug 2026): Nike results 1 Oct 2026 via CNBC / StockTitan",
+  "Daily closes 31 Jul - 9 Oct 2026: stockanalysis.com"
+ ],
+ "statements": {
+  "revenue": {
+   "2026-05-31": 46398,
+   "2025-05-31": 46309,
+   "2024-05-31": 51362
+  },
+  "net_income": {
+   "2026-05-31": 3108,
+   "2025-05-31": 3219,
+   "2024-05-31": 5700
+  },
+  "ebit": {
+   "2026-05-31": 3797,
+   "2025-05-31": 3702,
+   "2024-05-31": 6311
+  },
+  "pretax": {
+   "2026-05-31": 3900,
+   "2025-05-31": 3885,
+   "2024-05-31": 6700
+  },
+  "tax": {
+   "2026-05-31": 792,
+   "2025-05-31": 666,
+   "2024-05-31": 1000
+  },
+  "equity": {
+   "2026-05-31": 14865,
+   "2025-05-31": 13213,
+   "2024-05-31": 14430
+  },
+  "receivables": {
+   "2026-05-31": 5931,
+   "2025-05-31": 4717,
+   "2024-05-31": 4427
+  },
+  "inventory": {
+   "2026-05-31": 7501,
+   "2025-05-31": 7489,
+   "2024-05-31": 7519
+  },
+  "payables": {
+   "2026-05-31": 3600,
+   "2025-05-31": 3479,
+   "2024-05-31": 2851
+  },
+  "dividends": {
+   "2026-05-31": -2407,
+   "2025-05-31": -2300,
+   "2024-05-31": -2169
+  },
+  "da": {
+   "2026-05-31": 747,
+   "2025-05-31": 775,
+   "2024-05-31": 796
+  },
+  "capex": {
+   "2026-05-31": -684,
+   "2025-05-31": -430,
+   "2024-05-31": -812
+  },
+  "cfo": {
+   "2026-05-31": 2868,
+   "2025-05-31": 3698,
+   "2024-05-31": 7429
+  }
+ },
+ "snap": {
+  "name": "NIKE, Inc.",
+  "sector": "Consumer Cyclical",
+  "industry": "Footwear & Accessories",
+  "currency": "USD",
+  "fin_currency": "USD",
+  "price": 34.71,
+  "shares_m": 1484.699,
+  "mcap_m": 51533.9,
+  "debt_m": 7890,
+  "cash_m": 8370,
+  "leases_m": 3091,
+  "rev_ltm_m": 45888,
+  "ebitda_ltm_m": 3904,
+  "ni_ltm_m": 3093,
+  "eps_for_pe": 1.32,
+  "book_m": 14865,
+  "dps": 1.64,
+  "beta": 1.1,
+  "low52": 31.97,
+  "high52": 70.44,
+  "t_mean": 38.04,
+  "t_low": 19.0,
+  "t_high": 94.0,
+  "n_analysts": 42,
+  "rec_key": "hold",
+  "fwd_eps": 1.32,
+  "notes": {
+   "debt_m": "Financial debt 31 Aug 2026 (excl. operating leases)",
+   "leases_m": "Operating lease liabilities 31 May 2026 (478 current + 2,613 non-current)",
+   "ebitda_ltm_m": "LTM EBITDA 4,890 excl. one-off IEEPA tariff recovery of 986",
+   "ni_ltm_m": "FY26 3,108 - Q1 FY26 727 + Q1 FY27 712",
+   "eps_for_pe": "FY27E consensus EPS, used with forward P/E multiples",
+   "beta": "5-year beta (stockanalysis.com)"
+  }
+ },
+ "peers": [
+  {
+   "Ticker": "ADS.DE",
+   "Name": "adidas",
+   "Currency": "EUR",
+   "Market cap (bn)": 25.57,
+   "EV (bn)": 30.39,
+   "EV/Revenue": 1.17,
+   "EV/EBITDA": 9.2,
+   "P/E": 14.17,
+   "P/Book": 4.03
+  },
+  {
+   "Ticker": "PUMA.DE",
+   "Name": "Puma",
+   "Currency": "EUR",
+   "Market cap (bn)": 3.24,
+   "EV (bn)": 5.52,
+   "EV/Revenue": 0.79,
+   "EV/EBITDA": 25.81,
+   "P/E": null,
+   "P/Book": 1.78
+  },
+  {
+   "Ticker": "DECK",
+   "Name": "Deckers",
+   "Currency": "USD",
+   "Market cap (bn)": 11.29,
+   "EV (bn)": 10.16,
+   "EV/Revenue": 1.84,
+   "EV/EBITDA": 7.65,
+   "P/E": 10.88,
+   "P/Book": 4.92
+  },
+  {
+   "Ticker": "ONON",
+   "Name": "On Holding",
+   "Currency": "USD",
+   "Market cap (bn)": 11.73,
+   "EV (bn)": 10.89,
+   "EV/Revenue": 2.73,
+   "EV/EBITDA": 17.94,
+   "P/E": 19.03,
+   "P/Book": 4.96
+  },
+  {
+   "Ticker": "LULU",
+   "Name": "lululemon",
+   "Currency": "USD",
+   "Market cap (bn)": 10.46,
+   "EV (bn)": 11.21,
+   "EV/Revenue": 1.01,
+   "EV/EBITDA": 4.7,
+   "P/E": 11.34,
+   "P/Book": 2.2
+  },
+  {
+   "Ticker": "AS",
+   "Name": "Amer Sports",
+   "Currency": "USD",
+   "Market cap (bn)": 15.74,
+   "EV (bn)": 16.13,
+   "EV/Revenue": 2.17,
+   "EV/EBITDA": 13.29,
+   "P/E": 18.77,
+   "P/Book": 2.3
+  }
+ ],
+ "peers_note": "P/E = forward (NTM) P/E; EV multiples on LTM figures. Puma loss-making (P/E n/m).",
+ "prices": {
+  "2026-07-31": 41.71,
+  "2026-08-03": 42.64,
+  "2026-08-04": 41.53,
+  "2026-08-05": 42.45,
+  "2026-08-06": 42.0,
+  "2026-08-07": 41.7,
+  "2026-08-10": 42.11,
+  "2026-08-11": 41.32,
+  "2026-08-12": 40.51,
+  "2026-08-13": 41.23,
+  "2026-08-14": 40.73,
+  "2026-08-17": 39.09,
+  "2026-08-18": 40.06,
+  "2026-08-19": 41.05,
+  "2026-08-20": 40.21,
+  "2026-08-21": 40.76,
+  "2026-08-24": 40.75,
+  "2026-08-25": 39.48,
+  "2026-08-26": 38.59,
+  "2026-08-27": 38.44,
+  "2026-08-28": 39.6,
+  "2026-08-31": 39.06,
+  "2026-09-01": 38.12,
+  "2026-09-02": 38.24,
+  "2026-09-03": 38.77,
+  "2026-09-04": 38.4,
+  "2026-09-08": 38.1,
+  "2026-09-09": 37.35,
+  "2026-09-10": 36.62,
+  "2026-09-11": 36.8,
+  "2026-09-14": 37.05,
+  "2026-09-15": 36.22,
+  "2026-09-16": 35.78,
+  "2026-09-17": 36.36,
+  "2026-09-18": 35.51,
+  "2026-09-21": 36.1,
+  "2026-09-22": 36.1,
+  "2026-09-23": 36.05,
+  "2026-09-24": 35.99,
+  "2026-09-25": 35.75,
+  "2026-09-28": 36.39,
+  "2026-09-29": 35.84,
+  "2026-09-30": 35.4,
+  "2026-10-01": 35.15,
+  "2026-10-02": 33.87,
+  "2026-10-05": 33.96,
+  "2026-10-06": 34.61,
+  "2026-10-07": 34.36,
+  "2026-10-08": 34.74,
+  "2026-10-09": 34.71
+ }
+}
