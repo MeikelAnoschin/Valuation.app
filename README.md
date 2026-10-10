@@ -14,6 +14,7 @@ final project (Phase III B). Enter any stock ticker and value the company with a
 | Tab | What it shows |
 |---|---|
 | Residual Income | Forecast table, value bridge (book value + PV of residual income + PV of terminal value), assumptions and output |
+| Scenarios | Bear / Base / Bull values, probability-weighted value and residual income by scenario |
 | Sensitivity | Value per share for cost of equity x terminal growth |
 | Trading Comps | Peer multiples (EV/Revenue, EV/EBITDA, P/E, P/Book) and implied share price |
 | Football Field | All value ranges next to the current share price |
@@ -21,7 +22,8 @@ final project (Phase III B). Enter any stock ticker and value the company with a
 | Method | Formulas, Excel check and data sources |
 
 The sidebar lets you change the forecast period, growth, margin, payout ratio, cost of equity (CAPM or manual),
-terminal growth and the starting values - either one value for all years or year by year.
+terminal growth and the starting values - either one value for all years or year by year. The scenario switch
+(Bear / Base / Bull) applies to every tab; spreads and probabilities are set under "Scenario settings".
 
 ## Method (short)
 
@@ -30,6 +32,8 @@ terminal growth and the starting values - either one value for all years or year
 - **Value:** book value today + PV of RI (forecast years) + PV of terminal value `RI x (1 + g) / (ke - g)`.
 - **Cost of equity (CAPM):** `ke = rf + beta x ERP` (course inputs: rf 4.44%, beta 1.11, ERP 4.18%).
 - **Trading comps:** peer median multiples, range = 25th to 75th percentile; EV = market cap + debt - cash.
+- **Scenarios:** Base = sidebar assumptions; Bear / Bull = revenue growth -/+ 2 pp and net margin -/+ 1 pp (default),
+  weighted 25 / 50 / 25 %.
 - **Automatic assumptions** for other tickers: median of the last fiscal years, capped at realistic ranges.
 
 ## Files

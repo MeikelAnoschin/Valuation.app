@@ -16,7 +16,7 @@ from valuation import (
     sensitivity_grid,
 )
 
-st.set_page_config(page_title="Team 10 | Equity Valuation", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Team 10 | Equity Valuation", layout="wide")
 
 BLACK, ORANGE, GREY = "#111111", "#F25C05", "#8A8A8A"     # Team 10 / Nike report colours
 
@@ -159,7 +159,7 @@ def fmt_pct(x):
 # 2. SIDEBAR - TICKER AND ASSUMPTIONS
 # --------------------------------------------------------------------------
 ss = st.session_state
-st.sidebar.title("📈 Valuation inputs")
+st.sidebar.title("Valuation inputs")
 st.sidebar.caption("Team 10 · WHU PT-MiM · Final Project Phase III B")
 ticker = st.sidebar.text_input("Stock ticker", value="NKE", help="Yahoo Finance symbol, e.g. NKE, AAPL, ADS.DE").strip().upper()
 
@@ -207,7 +207,8 @@ def clip(x, lo, hi):
 
 # Keep values of widgets that are temporarily hidden (Streamlit would otherwise forget them)
 WIDGET_KEYS = ["growth", "margin", "payout", "rf", "erp", "g", "ke_manual", "beta", "years",
-               "ke_mode", "mode", "rev0", "bv0", "shares", "peers"]
+               "ke_mode", "mode", "rev0", "bv0", "shares", "peers",
+               "scenario", "sc_g", "sc_m", "p_bear", "p_base", "p_bull"]
 for k in WIDGET_KEYS:
     if k in ss:
         ss[k] = ss[k]
@@ -217,7 +218,7 @@ def load_excel_check():
     c = EXCEL_CHECK
     ss.update({"rev0": c["rev0"], "bv0": c["bv0"], "shares": c["shares"], "payout": c["payout"],
                "rf": c["rf"], "beta": c["beta"], "erp": c["erp"], "g": c["g"], "years": 5,
-               "ke_mode": "CAPM", "mode": "Year by year"})
+               "ke_mode": "CAPM", "mode": "Year by year", "scenario": "Base"})
     ss["yearly_preset"] = pd.DataFrame({"Revenue growth %": c["growth"], "Net margin %": c["margin"]})
     ss["preset_id"] = ss.get("preset_id", 0) + 1
 
@@ -235,13 +236,23 @@ if ss.get("loaded_ticker") != ticker:
         "shares": float(shares_yf) if not np.isnan(shares_yf) else 1.0,
         "peers": DEFAULT_PEERS.get(ticker, ""),
         "yearly_preset": None,
+        "scenario": "Base", "sc_g": 2.0, "sc_m": 1.0, "p_bear": 25, "p_base": 50, "p_bull": 25,
     })
     if ticker == "NKE":          # Nike opens with our Phase II Excel model
         load_excel_check()
     ss["loaded_ticker"] = ticker
 
 
-st.sidebar.subheader("Forecast")
+SCENARIOS = ["Bear", "Base", "Bull"]
+SHIFT = {"Bear": -1, "Base": 0, "Bull": 1}
+SCEN_COLORS = {"Bear": GREY, "Base": BLACK, "Bull": ORANGE}
+
+st.sidebar.subheader("Scenario")
+scenario = st.sidebar.radio("Scenario shown", SCENARIOS, horizontal=True, key="scenario",
+                            help="Base = your assumptions below. Bear / Bull move revenue growth and net margin "
+                                 "down / up by the spreads set under 'Scenario settings'.")
+
+st.sidebar.subheader("Forecast (Base case)")
 years = st.sidebar.slider("Forecast period (years)", 3, 10, key="years")
 mode = st.sidebar.radio("Assumption mode", ["Simple (one value for all years)", "Year by year"], key="mode")
 
@@ -289,20 +300,43 @@ with st.sidebar.expander("Starting values (from Yahoo, editable)"):
     st.number_input(f"Book value of equity FY{base_year} ({currency} m)", key="bv0", step=100.0)
     st.number_input("Shares outstanding (m)", key="shares", step=1.0)
 
+with st.sidebar.expander("Scenario settings"):
+    st.number_input("Revenue growth spread (+/- pp)", 0.0, 20.0, step=0.5, key="sc_g")
+    st.number_input("Net margin spread (+/- pp)", 0.0, 20.0, step=0.5, key="sc_m")
+    st.caption("Probabilities (%)")
+    pc1, pc2, pc3 = st.columns(3)
+    pc1.number_input("Bear", 0, 100, step=5, key="p_bear")
+    pc2.number_input("Base", 0, 100, step=5, key="p_base")
+    pc3.number_input("Bull", 0, 100, step=5, key="p_bull")
+
 if ticker == "NKE":
-    st.sidebar.button("↺ Reload Team 10 Excel model (Phase II)", on_click=load_excel_check,
+    st.sidebar.button("Reload Team 10 Excel model (Phase II)", on_click=load_excel_check,
                       help="Loads exactly the assumptions of our manual Excel model. Expected result: $36.97")
 
 # --------------------------------------------------------------------------
 # 3. CALCULATIONS
 # --------------------------------------------------------------------------
-base_kwargs = dict(rev0=ss.rev0, bv0=ss.bv0, shares=ss.shares, growth=growth, margin=margin,
-                   payout=ss.payout / 100, ke=ke, g=g, base_year=base_year)
+# Bear / Base / Bull: Base = sidebar inputs, Bear / Bull shift growth and net margin by the spreads
+scen_inputs = {s: ([x + SHIFT[s] * ss.sc_g / 100 for x in growth], [x + SHIFT[s] * ss.sc_m / 100 for x in margin])
+               for s in SCENARIOS}
+scen_res = {}
 try:
-    ri = residual_income_valuation(**base_kwargs)
+    for s in SCENARIOS:
+        scen_res[s] = residual_income_valuation(
+            rev0=ss.rev0, bv0=ss.bv0, shares=ss.shares, growth=scen_inputs[s][0], margin=scen_inputs[s][1],
+            payout=ss.payout / 100, ke=ke, g=g, base_year=base_year)
 except ValueError as e:
     st.error(str(e))
     st.stop()
+probs = {"Bear": ss.p_bear, "Base": ss.p_base, "Bull": ss.p_bull}
+prob_sum = sum(probs.values()) or 1
+weighted_value = sum(scen_res[s]["per_share"] * probs[s] for s in SCENARIOS) / prob_sum
+
+# the selected scenario drives every tab
+growth, margin = scen_inputs[scenario]
+base_kwargs = dict(rev0=ss.rev0, bv0=ss.bv0, shares=ss.shares, growth=growth, margin=margin,
+                   payout=ss.payout / 100, ke=ke, g=g, base_year=base_year)
+ri = scen_res[scenario]
 
 ri_value = ri["per_share"]
 if ss.bv0 <= 0:
@@ -325,20 +359,22 @@ st.caption(f"{info.get('sector', '')} · {info.get('industry', '')} · Financial
 
 c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric("Current share price", f"{price:,.2f}")
-c2.metric("Residual income value", f"{ri_value:,.2f}", f"{upside:+.1%} vs. market" if not pd.isna(upside) else None)
+c2.metric(f"Residual income value ({scenario})", f"{ri_value:,.2f}", f"{upside:+.1%} vs. market" if not pd.isna(upside) else None)
 c3.metric("Cost of equity", f"{ke:.2%}")
-c4.metric("Terminal growth", f"{g:.2%}")
+c4.metric("Scenario-weighted value", f"{weighted_value:,.2f}",
+          f"{weighted_value / price - 1:+.1%} vs. market" if price else None,
+          help=f"Bear {probs['Bear']}% / Base {probs['Base']}% / Bull {probs['Bull']}%")
 verdict = "n/a" if pd.isna(upside) else ("Undervalued" if upside > 0.10 else "Overvalued" if upside < -0.10 else "Fairly valued")
 c5.metric("Signal (±10% band)", verdict)
 
-if ticker == "NKE" and mode == "Year by year" and abs(ss.rev0 - EXCEL_CHECK["rev0"]) < 1:
+if ticker == "NKE" and mode == "Year by year" and scenario == "Base" and abs(ss.rev0 - EXCEL_CHECK["rev0"]) < 1:
     diff = ri_value / EXCEL_CHECK["target_price"] - 1
     (st.success if abs(diff) < 0.001 else st.info)(
-        f"{'✅ ' if abs(diff) < 0.001 else ''}**Excel check:** app value {ri_value:.2f} vs. Team 10 manual Excel model "
+        f"**Excel check:** app value {ri_value:.2f} vs. Team 10 manual Excel model "
         f"{EXCEL_CHECK['target_price']:.2f} → difference {diff:+.2%}")
 
-tab_ri, tab_sens, tab_comps, tab_ff, tab_data, tab_method = st.tabs(
-    ["📊 Residual Income", "🎯 Sensitivity", "🏢 Trading Comps", "🏈 Football Field", "📁 Company data", "ℹ️ Method"])
+tab_ri, tab_scen, tab_sens, tab_comps, tab_ff, tab_data, tab_method = st.tabs(
+    ["Residual Income", "Scenarios", "Sensitivity", "Trading Comps", "Football Field", "Company data", "Method"])
 
 # --------------------------------------------------------------------------
 # 5. RESIDUAL INCOME TAB
@@ -403,6 +439,49 @@ with tab_ri:
     st.plotly_chart(fig2, key="chart_2")
 
 # --------------------------------------------------------------------------
+# 5b. SCENARIOS TAB
+# --------------------------------------------------------------------------
+with tab_scen:
+    st.subheader("Bear / Base / Bull scenarios")
+    st.caption(f"Base = the assumptions in the sidebar. Bear / Bull: revenue growth -/+ {ss.sc_g:.1f} pp and "
+               f"net margin -/+ {ss.sc_m:.1f} pp in every forecast year. Change spreads and probabilities under "
+               "'Scenario settings' in the sidebar; choose the scenario shown in all tabs at the top of the sidebar.")
+    rows = []
+    for s in SCENARIOS:
+        gr, mg = scen_inputs[s]
+        v = scen_res[s]["per_share"]
+        rows.append({"Scenario": s, "Avg. revenue growth": np.mean(gr), "Avg. net margin": np.mean(mg),
+                     f"Revenue FY{base_year + years} ({currency} m)": scen_res[s]["table"]["Revenue"].iloc[-1],
+                     "Value per share": v, "vs. market price": v / price - 1 if price else np.nan,
+                     "Probability": probs[s] / prob_sum})
+    rows.append({"Scenario": "Probability-weighted", "Value per share": weighted_value,
+                 "vs. market price": weighted_value / price - 1 if price else np.nan, "Probability": 1.0})
+    st.dataframe(pd.DataFrame(rows).set_index("Scenario").style.format(
+        {"Avg. revenue growth": "{:.2%}", "Avg. net margin": "{:.2%}",
+         f"Revenue FY{base_year + years} ({currency} m)": "{:,.0f}", "Value per share": "{:,.2f}",
+         "vs. market price": "{:+.1%}", "Probability": "{:.0%}"}, na_rep="–"))
+    if prob_sum != 100:
+        st.caption(f"Probabilities add up to {prob_sum}% - they are rescaled to 100%.")
+
+    left, right = st.columns(2)
+    with left:
+        vals = [scen_res[s]["per_share"] for s in SCENARIOS] + [weighted_value]
+        fig = go.Figure(go.Bar(x=SCENARIOS + ["Weighted"], y=vals,
+                               marker_color=[SCEN_COLORS[s] for s in SCENARIOS] + ["#C9C9C9"],
+                               text=[f"{v:,.2f}" for v in vals], textposition="outside"))
+        fig.add_hline(y=price, line_dash="dash", line_color=GREY, annotation_text=f"Market price {price:,.2f}")
+        fig.update_layout(title="Value per share by scenario", height=380, showlegend=False)
+        st.plotly_chart(fig, key="chart_scen_values")
+    with right:
+        fig = go.Figure()
+        for s in SCENARIOS:
+            t_ = scen_res[s]["table"]
+            fig.add_scatter(x=t_["Year"], y=t_["Residual income"], name=s, mode="lines+markers",
+                            line_color=SCEN_COLORS[s])
+        fig.update_layout(title=f"Residual income by scenario ({currency} m)", height=380)
+        st.plotly_chart(fig, key="chart_scen_ri")
+
+# --------------------------------------------------------------------------
 # 6. SENSITIVITY TAB
 # --------------------------------------------------------------------------
 with tab_sens:
@@ -465,7 +544,9 @@ with tab_comps:
 # --------------------------------------------------------------------------
 with tab_ff:
     st.subheader("Valuation range by method")
-    bars = [("Residual income (ke ±1pp, g ±0.5pp)", np.nanmin(inner.values), ri_value, np.nanmax(inner.values))]
+    sv = [scen_res[s]["per_share"] for s in SCENARIOS]
+    bars = [("Residual income (ke ±1pp, g ±0.5pp)", np.nanmin(inner.values), ri_value, np.nanmax(inner.values)),
+            ("Residual income: Bear - Base - Bull", min(sv), sv[1], max(sv))]
     for _, r in comps_prices.iterrows():
         bars.append((f"Comps: {r['Multiple']}", r["Low"], r["Mid"], r["High"]))
     lo52, hi52 = info.get("fiftyTwoWeekLow"), info.get("fiftyTwoWeekHigh")
@@ -475,7 +556,7 @@ with tab_ff:
 
     fig = go.Figure()
     fig.add_bar(y=ff["Method"], x=ff["High"] - ff["Low"], base=ff["Low"], orientation="h",
-                marker_color=[BLACK] + [ORANGE] * len(comps_prices) + ["#C9C9C9"] * (len(ff) - 1 - len(comps_prices)),
+                marker_color=[BLACK, GREY] + [ORANGE] * len(comps_prices) + ["#C9C9C9"] * (len(ff) - 2 - len(comps_prices)),
                 text=[f"{l:,.2f} – {h:,.2f}" for l, h in zip(ff["Low"], ff["High"])], textposition="outside",
                 hovertemplate="%{y}<br>Low %{base:,.2f}<extra></extra>")
     fig.add_scatter(y=ff["Method"], x=ff["Mid"], mode="markers", marker=dict(color=GREY, symbol="line-ns-open",
@@ -527,7 +608,9 @@ with tab_method:
         "5. **Cost of equity (CAPM):** ke = risk-free rate + beta x equity risk premium.\n"
         "6. **Trading comps:** peer median multiples (EV/Revenue, EV/EBITDA, P/E, P/Book) applied to the company; "
         "EV = market cap + debt - cash; range = peer 25th to 75th percentile.\n"
-        "7. **Football field:** all value ranges next to the current share price.")
+        "7. **Scenarios:** Base = the sidebar assumptions; Bear / Bull move revenue growth and net margin down / up "
+        "by a spread in every year. The probability-weighted value combines the three.\n"
+        "8. **Football field:** all value ranges next to the current share price.")
     st.subheader("Check against our Excel model")
     st.markdown(f"For Nike the app opens with exactly the assumptions of our manual Phase II Excel model "
                 f"(cost of equity {EXCEL_CHECK['rf']:.2f}% + {EXCEL_CHECK['beta']:.2f} x {EXCEL_CHECK['erp']:.2f}%, "
