@@ -1,5 +1,5 @@
 """
-app.py - Interactive Residual Income & Trading Comps valuation app.
+app.py - Team 10 (WHU PT-MiM) - Interactive Residual Income & Trading Comps valuation app.
 
 Run with:   streamlit run app.py
 Needs:      valuation.py in the same folder, internet access (Yahoo Finance).
@@ -16,7 +16,9 @@ from valuation import (
     sensitivity_grid,
 )
 
-st.set_page_config(page_title="Equity Valuation App", page_icon="📈", layout="wide")
+st.set_page_config(page_title="Team 10 | Equity Valuation", page_icon="📈", layout="wide")
+
+BLACK, ORANGE, GREY = "#111111", "#F25C05", "#8A8A8A"     # Team 10 / Nike report colours
 
 DEFAULT_PEERS = {"NKE": "ADS.DE, PUMA.DE, DECK, ONON, LULU, UAA"}
 
@@ -35,7 +37,7 @@ EXCEL_CHECK = {
 # --------------------------------------------------------------------------
 def _row(df, names):
     """Return the first matching row of a yfinance statement, newest year first."""
-    if df is None or df.empty:
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
         return None
     for name in names:
         if name in df.index:
@@ -45,11 +47,53 @@ def _row(df, names):
     return None
 
 
+KNOWN = {"NKE": {"longName": "NIKE, Inc.", "sector": "Consumer Cyclical", "industry": "Footwear & Accessories"}}
+
+
+def _safe(fn, default=None):
+    try:
+        v = fn()
+        return default if v is None else v
+    except Exception:
+        return default
+
+
+def fill_info(tk, t, info, inc, bs, prices):
+    """Yahoo's profile endpoint is often blocked on cloud servers. Fill every missing key figure
+    from sources that work reliably: fast_info, the financial statements and the price history."""
+    info = dict(info or {})
+    fi = _safe(lambda: t.fast_info)
+    fget = lambda a: _safe(lambda: getattr(fi, a)) if fi is not None else None
+    latest = lambda df, names: (lambda r: float(r.iloc[0]) if r is not None else None)(_row(df, names))
+
+    def put(key, value):
+        if not info.get(key) and value:
+            info[key] = value
+    put("currentPrice", fget("last_price") or (float(prices.iloc[-1]) if len(prices) else None))
+    put("marketCap", fget("market_cap"))
+    put("sharesOutstanding", fget("shares") or latest(bs, ["Ordinary Shares Number", "Share Issued"]))
+    put("currency", fget("currency"))
+    put("totalDebt", latest(bs, ["Total Debt"]))
+    put("totalCash", latest(bs, ["Cash Cash Equivalents And Short Term Investments", "Cash And Cash Equivalents"]))
+    put("totalRevenue", latest(inc, ["Total Revenue", "Operating Revenue"]))
+    put("ebitda", latest(inc, ["EBITDA", "Normalized EBITDA"]))
+    put("netIncomeToCommon", latest(inc, ["Net Income Common Stockholders", "Net Income"]))
+    eq, sh = latest(bs, ["Stockholders Equity", "Common Stock Equity"]), info.get("sharesOutstanding")
+    put("bookValue", eq / sh if (eq and sh) else None)
+    if len(prices):
+        last_year = prices[prices.index >= prices.index[-1] - pd.Timedelta(days=365)]
+        put("fiftyTwoWeekLow", float(last_year.min()))
+        put("fiftyTwoWeekHigh", float(last_year.max()))
+    for k, v in KNOWN.get(tk, {}).items():
+        put(k, v)
+    return info
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_company(ticker):
     t = yf.Ticker(ticker)
-    info = t.info or {}
-    inc, bs, cf = t.income_stmt, t.balance_sheet, t.cashflow
+    info = _safe(lambda: t.info, {}) or {}
+    inc, bs, cf = _safe(lambda: t.income_stmt), _safe(lambda: t.balance_sheet), _safe(lambda: t.cashflow)
     data = {
         "info": info,
         "revenue": _row(inc, ["Total Revenue", "Operating Revenue"]),
@@ -58,8 +102,9 @@ def load_company(ticker):
         "equity": _row(bs, ["Stockholders Equity", "Common Stock Equity"]),
         "dividends": _row(cf, ["Cash Dividends Paid", "Common Stock Dividend Paid"]),
     }
-    hist = t.history(period="5y")
-    data["prices"] = hist["Close"] if not hist.empty else pd.Series(dtype=float)
+    hist = _safe(lambda: t.history(period="5y"), pd.DataFrame())
+    data["prices"] = hist["Close"].dropna() if "Close" in hist else pd.Series(dtype=float)
+    data["info"] = fill_info(ticker, t, info, inc, bs, data["prices"])
     return data
 
 
@@ -68,10 +113,10 @@ def load_peer_multiples(tickers):
     rows = []
     for tk in tickers:
         try:
-            i = yf.Ticker(tk).info or {}
+            i = load_company(tk)["info"]          # same robust data as for the company itself
         except Exception:
             continue
-        if not i:
+        if not i.get("marketCap") or not i.get("totalRevenue"):
             continue
         rows.append(peer_row(tk, i))
     df = pd.DataFrame(rows)
@@ -115,6 +160,7 @@ def fmt_pct(x):
 # --------------------------------------------------------------------------
 ss = st.session_state
 st.sidebar.title("📈 Valuation inputs")
+st.sidebar.caption("Team 10 · WHU PT-MiM · Final Project Phase III B")
 ticker = st.sidebar.text_input("Stock ticker", value="NKE", help="Yahoo Finance symbol, e.g. NKE, AAPL, ADS.DE").strip().upper()
 
 try:
@@ -143,10 +189,16 @@ _share_candidates = [x for x in _share_candidates if x]
 shares_yf = max(_share_candidates) / 1e6 if _share_candidates else np.nan
 currency = info.get("financialCurrency") or info.get("currency") or "USD"
 
-# historical defaults
-hist_growth = rev_hist.iloc[0] / rev_hist.iloc[1] - 1 if len(rev_hist) > 1 else 0.03
-hist_margin = ni_hist.iloc[0] / rev_hist.iloc[0]
-hist_payout = (div_hist.iloc[0] / ni_hist.iloc[0]) if (div_hist is not None and ni_hist.iloc[0] > 0) else 0.0
+# Historical defaults: median of the last fiscal years instead of one single year,
+# so one unusual year (or a data error) does not produce absurd assumptions
+_growth_rates = (rev_hist / rev_hist.shift(-1) - 1).dropna()
+hist_growth = float(_growth_rates.median()) if len(_growth_rates) else 0.03
+hist_margin = float((ni_hist / rev_hist).dropna().median())
+if div_hist is not None:
+    _payouts = (div_hist / ni_hist)[ni_hist > 0].dropna()
+    hist_payout = float(_payouts.median()) if len(_payouts) else 0.0
+else:
+    hist_payout = 0.0
 
 
 def clip(x, lo, hi):
@@ -160,23 +212,6 @@ for k in WIDGET_KEYS:
     if k in ss:
         ss[k] = ss[k]
 
-# Reset inputs to the new company's data whenever the ticker changes
-if ss.get("loaded_ticker") != ticker:
-    ss.update({
-        "growth": round(clip(hist_growth * 100, -30, 40), 1),
-        "margin": round(clip(hist_margin * 100, -20, 50), 1),
-        "payout": round(clip(hist_payout * 100, 0, 100), 1),
-        "rf": 4.44, "erp": 4.18, "g": 2.15, "ke_manual": 9.0,
-        "beta": round(clip(info.get("beta") or 1.0, 0, 3), 2),
-        "years": 5, "ke_mode": "CAPM", "mode": "Simple (one value for all years)",
-        "rev0": float(rev_hist.iloc[0]), "bv0": float(eq_hist.iloc[0]),
-        "shares": float(shares_yf) if not np.isnan(shares_yf) else 1.0,
-        "peers": DEFAULT_PEERS.get(ticker, ""),
-        "yearly_preset": None,
-    })
-    ss["loaded_ticker"] = ticker
-
-
 def load_excel_check():
     """Button callback: load the Nike Phase 2 Excel assumptions."""
     c = EXCEL_CHECK
@@ -187,15 +222,34 @@ def load_excel_check():
     ss["preset_id"] = ss.get("preset_id", 0) + 1
 
 
+# Reset inputs to the new company's data whenever the ticker changes
+if ss.get("loaded_ticker") != ticker:
+    ss.update({
+        "growth": round(clip(hist_growth * 100, -10, 15), 1),
+        "margin": round(clip(hist_margin * 100, -20, 40), 1),
+        "payout": round(clip(hist_payout * 100, 0, 100), 1),
+        "rf": 4.44, "erp": 4.18, "g": 2.15, "ke_manual": 9.0,
+        "beta": round(clip(info.get("beta") or 1.0, 0, 3), 2),
+        "years": 5, "ke_mode": "CAPM", "mode": "Simple (one value for all years)",
+        "rev0": float(rev_hist.iloc[0]), "bv0": float(eq_hist.iloc[0]),
+        "shares": float(shares_yf) if not np.isnan(shares_yf) else 1.0,
+        "peers": DEFAULT_PEERS.get(ticker, ""),
+        "yearly_preset": None,
+    })
+    if ticker == "NKE":          # Nike opens with our Phase II Excel model
+        load_excel_check()
+    ss["loaded_ticker"] = ticker
+
+
 st.sidebar.subheader("Forecast")
 years = st.sidebar.slider("Forecast period (years)", 3, 10, key="years")
 mode = st.sidebar.radio("Assumption mode", ["Simple (one value for all years)", "Year by year"], key="mode")
 
 if mode.startswith("Simple"):
     st.sidebar.slider("Revenue growth (% p.a.)", -30.0, 40.0, step=0.1, key="growth",
-                      help=f"Last fiscal year: {fmt_pct(hist_growth)}")
+                      help=f"Median of the last fiscal years: {fmt_pct(hist_growth)}")
     st.sidebar.slider("Net income margin (%)", -20.0, 50.0, step=0.1, key="margin",
-                      help=f"Last fiscal year: {fmt_pct(hist_margin)}")
+                      help=f"Median of the last fiscal years: {fmt_pct(hist_margin)}")
     growth = [ss.growth / 100] * years
     margin = [ss.margin / 100] * years
 else:
@@ -214,7 +268,7 @@ else:
     margin = (edited["Net margin %"].astype(float) / 100).tolist()
 
 st.sidebar.slider("Dividend payout ratio (%)", 0.0, 100.0, step=0.1, key="payout",
-                  help=f"Last fiscal year: {fmt_pct(hist_payout)}")
+                  help=f"Median of the last fiscal years: {fmt_pct(hist_payout)}")
 
 st.sidebar.subheader("Discount rate")
 ke_mode = st.sidebar.radio("Cost of equity", ["CAPM", "Manual"], horizontal=True, key="ke_mode")
@@ -236,7 +290,7 @@ with st.sidebar.expander("Starting values (from Yahoo, editable)"):
     st.number_input("Shares outstanding (m)", key="shares", step=1.0)
 
 if ticker == "NKE":
-    st.sidebar.button("✅ Load Excel check (Nike Phase 2)", on_click=load_excel_check,
+    st.sidebar.button("↺ Reload Team 10 Excel model (Phase II)", on_click=load_excel_check,
                       help="Loads exactly the assumptions of our manual Excel model. Expected result: $36.97")
 
 # --------------------------------------------------------------------------
@@ -279,11 +333,12 @@ c5.metric("Signal (±10% band)", verdict)
 
 if ticker == "NKE" and mode == "Year by year" and abs(ss.rev0 - EXCEL_CHECK["rev0"]) < 1:
     diff = ri_value / EXCEL_CHECK["target_price"] - 1
-    st.info(f"**Excel check:** app value {ri_value:.2f} vs. manual Excel model {EXCEL_CHECK['target_price']:.2f} "
-            f"→ difference {diff:+.2%}")
+    (st.success if abs(diff) < 0.001 else st.info)(
+        f"{'✅ ' if abs(diff) < 0.001 else ''}**Excel check:** app value {ri_value:.2f} vs. Team 10 manual Excel model "
+        f"{EXCEL_CHECK['target_price']:.2f} → difference {diff:+.2%}")
 
-tab_ri, tab_sens, tab_comps, tab_ff, tab_data = st.tabs(
-    ["📊 Residual Income", "🎯 Sensitivity", "🏢 Trading Comps", "🏈 Football Field", "📁 Company data"])
+tab_ri, tab_sens, tab_comps, tab_ff, tab_data, tab_method = st.tabs(
+    ["📊 Residual Income", "🎯 Sensitivity", "🏢 Trading Comps", "🏈 Football Field", "📁 Company data", "ℹ️ Method"])
 
 # --------------------------------------------------------------------------
 # 5. RESIDUAL INCOME TAB
@@ -308,10 +363,11 @@ with tab_ri:
             x=["Book value today", "PV of RI (forecast)", "PV of terminal value", "Value per share"],
             y=[ri["bv0"] / sh, ri["pv_ri"] / sh, ri["pv_tv"] / sh, 0],
             text=[f"{v:,.2f}" for v in [ri["bv0"] / sh, ri["pv_ri"] / sh, ri["pv_tv"] / sh, ri_value]],
-            textposition="outside"))
-        fig.add_hline(y=price, line_dash="dash", line_color="red", annotation_text=f"Market price {price:,.2f}")
+            textposition="outside", increasing_marker_color=ORANGE, decreasing_marker_color=GREY,
+            totals_marker_color=BLACK))
+        fig.add_hline(y=price, line_dash="dash", line_color=GREY, annotation_text=f"Market price {price:,.2f}")
         fig.update_layout(height=380, margin=dict(t=20, b=10), showlegend=False)
-        st.plotly_chart(fig)
+        st.plotly_chart(fig, key="chart_1")
         tv_share = ri["pv_tv"] / ri["equity_value"]
         st.caption(f"Terminal value = {tv_share:.0%} of total value. "
                    f"TV = RI(final year) × (1+g) / (ke − g) = {ri['terminal_value']:,.0f}")
@@ -339,11 +395,12 @@ with tab_ri:
 
     t = ri["table"]
     fig2 = go.Figure()
-    fig2.add_bar(x=t["Year"], y=t["Net income"], name="Net income")
-    fig2.add_bar(x=t["Year"], y=t["Equity charge"], name="Equity charge (ke × BV)")
-    fig2.add_scatter(x=t["Year"], y=t["Residual income"], name="Residual income", mode="lines+markers")
+    fig2.add_bar(x=t["Year"], y=t["Net income"], name="Net income", marker_color=BLACK)
+    fig2.add_bar(x=t["Year"], y=t["Equity charge"], name="Equity charge (ke × BV)", marker_color=GREY)
+    fig2.add_scatter(x=t["Year"], y=t["Residual income"], name="Residual income", mode="lines+markers",
+                     line_color=ORANGE)
     fig2.update_layout(title=f"Net income vs. cost of equity ({currency} m)", barmode="group", height=360)
-    st.plotly_chart(fig2)
+    st.plotly_chart(fig2, key="chart_2")
 
 # --------------------------------------------------------------------------
 # 6. SENSITIVITY TAB
@@ -355,7 +412,7 @@ with tab_sens:
         text=[[f"{v:,.2f}" if not pd.isna(v) else "–" for v in row] for row in grid.values],
         texttemplate="%{text}", colorscale="RdYlGn", zmid=price, showscale=False))
     fig.update_layout(height=420, yaxis_autorange="reversed")
-    st.plotly_chart(fig)
+    st.plotly_chart(fig, key="chart_3")
     st.caption(f"Green = above the current market price ({price:,.2f}), red = below.")
 
 # --------------------------------------------------------------------------
@@ -418,15 +475,15 @@ with tab_ff:
 
     fig = go.Figure()
     fig.add_bar(y=ff["Method"], x=ff["High"] - ff["Low"], base=ff["Low"], orientation="h",
-                marker_color=["#2E86AB"] + ["#A23B72"] * len(comps_prices) + ["#999999"] * (len(ff) - 1 - len(comps_prices)),
+                marker_color=[BLACK] + [ORANGE] * len(comps_prices) + ["#C9C9C9"] * (len(ff) - 1 - len(comps_prices)),
                 text=[f"{l:,.2f} – {h:,.2f}" for l, h in zip(ff["Low"], ff["High"])], textposition="outside",
                 hovertemplate="%{y}<br>Low %{base:,.2f}<extra></extra>")
-    fig.add_scatter(y=ff["Method"], x=ff["Mid"], mode="markers", marker=dict(color="black", symbol="line-ns-open",
+    fig.add_scatter(y=ff["Method"], x=ff["Mid"], mode="markers", marker=dict(color=GREY, symbol="line-ns-open",
                     size=18, line_width=3), name="Mid / median")
-    fig.add_vline(x=price, line_dash="dash", line_color="red", annotation_text=f"Market price {price:,.2f}")
+    fig.add_vline(x=price, line_dash="dash", line_color=GREY, annotation_text=f"Market price {price:,.2f}")
     fig.update_layout(height=120 + 70 * len(ff), showlegend=False, xaxis_title=f"Value per share ({info.get('currency', '')})",
                       yaxis_autorange="reversed", margin=dict(l=10, r=10, t=30, b=10))
-    st.plotly_chart(fig)
+    st.plotly_chart(fig, key="chart_4")
     st.dataframe(ff.set_index("Method").style.format("{:,.2f}"))
 
 # --------------------------------------------------------------------------
@@ -449,7 +506,36 @@ with tab_data:
                  .format("{:.1%}", subset=pd.IndexSlice[pct_cols, :], na_rep="–"))
 
     if len(data["prices"]):
-        fig = go.Figure(go.Scatter(x=data["prices"].index, y=data["prices"].values, mode="lines"))
-        fig.add_hline(y=ri_value, line_dash="dot", line_color="green", annotation_text=f"RI value {ri_value:,.2f}")
+        fig = go.Figure(go.Scatter(x=data["prices"].index, y=data["prices"].values, mode="lines", line_color=BLACK))
+        fig.add_hline(y=ri_value, line_dash="dot", line_color=ORANGE, annotation_text=f"RI value {ri_value:,.2f}")
         fig.update_layout(title="Share price - last 5 years", height=360)
-        st.plotly_chart(fig)
+        st.plotly_chart(fig, key="chart_5")
+
+# --------------------------------------------------------------------------
+# 10. METHOD & SOURCES TAB
+# --------------------------------------------------------------------------
+with tab_method:
+    st.subheader("How the app values a company")
+    st.markdown(
+        "1. **Forecast:** revenue grows with the revenue growth rate; net income = revenue x net income margin; "
+        "dividends = net income x payout ratio.\n"
+        "2. **Book value (clean surplus):** ending book value = opening book value + net income - dividends.\n"
+        "3. **Residual income (RI):** RI = net income - cost of equity x opening book value. "
+        "A company only creates value if its return on equity is above its cost of equity.\n"
+        "4. **Value:** book value today + present value of RI in the forecast years + present value of the "
+        "terminal value, TV = RI(final year) x (1 + g) / (ke - g). Divided by the shares = value per share.\n"
+        "5. **Cost of equity (CAPM):** ke = risk-free rate + beta x equity risk premium.\n"
+        "6. **Trading comps:** peer median multiples (EV/Revenue, EV/EBITDA, P/E, P/Book) applied to the company; "
+        "EV = market cap + debt - cash; range = peer 25th to 75th percentile.\n"
+        "7. **Football field:** all value ranges next to the current share price.")
+    st.subheader("Check against our Excel model")
+    st.markdown(f"For Nike the app opens with exactly the assumptions of our manual Phase II Excel model "
+                f"(cost of equity {EXCEL_CHECK['rf']:.2f}% + {EXCEL_CHECK['beta']:.2f} x {EXCEL_CHECK['erp']:.2f}%, "
+                f"terminal growth {EXCEL_CHECK['g']:.2f}%) and reproduces its value of "
+                f"**${EXCEL_CHECK['target_price']:.2f}** per share. Any other ticker starts with automatic assumptions "
+                "(median of its last fiscal years) that can be changed in the sidebar.")
+    st.subheader("Data")
+    st.markdown("Yahoo Finance via the `yfinance` package: financial statements, share prices and peer data. "
+                "If Yahoo's company profile is unavailable, key figures are taken from the statements and the "
+                "price history instead.")
+    st.caption("Academic project by Team 10 (WHU Otto Beisheim School of Management) - not investment advice.")

@@ -1,47 +1,43 @@
 # Equity Valuation App - Team 10 (WHU PT-MiM)
 
-Interactive valuation app built with **Streamlit** and **Yahoo Finance** for the WHU Part-Time Master in Management final
-project (Phase III B). Enter any stock ticker and value the company with a DCF, a residual income model and trading
-comparables - with Bear / Base / Bull scenarios, a 12-month target price and a Buy / Hold / Sell rating.
+Interactive valuation app built with **Streamlit** and **Yahoo Finance** for the WHU Part-Time Master in Management
+final project (Phase III B). Enter any stock ticker and value the company with a **residual income model** and
+**trading comparables**.
 
-**Live app:** `https://<your-app-name>.streamlit.app` *(replace with your link)*
+**Live app:** https://whu-team10-valuation.streamlit.app
 
-> Default company: **NIKE, Inc. (NKE)**. Two built-in presets reproduce our Excel model exactly:
-> the course Phase II residual income value (**$36.97**) and our sell-side report
-> (DCF Bear **$25.42** / Base **$40.64** / Bull **$56.87**, target price **$38**, rating **HOLD**).
+> Default company: **NIKE, Inc. (NKE)**. The app opens with exactly the assumptions of our manual Phase II Excel model
+> and reproduces its value of **$36.97 per share** (green check box at the top of the page).
 
 ## Features
 
-| Area | What it does |
+| Tab | What it shows |
 |---|---|
-| Data | Yahoo Finance via `yfinance` (prices, financial statements, profile where available). Robust fallbacks when Yahoo's profile endpoint is blocked; offline Nike data set (9 Oct 2026) as a safety net |
-| Valuation models | FCFF **DCF** with WACC (CAPM), **residual income** model (clean surplus), **trading comps** (EV/Revenue, EV/EBITDA, P/E, P/Book) |
-| Scenarios | Editable Bear / Base / Bull assumptions per year (growth, margins, tax, one-off costs), probability weighting |
-| Target & rating | 12-month target price from DCF + comps, total return incl. dividends, Buy / Hold / Sell thresholds |
-| Risk analysis | Tornado chart with driver ranking, WACC x growth sensitivity tables, **Monte Carlo** simulation, **reverse DCF** (what the share price implies) |
-| Market | Football field, analyst consensus, peer suggestions by industry, side-by-side company comparison |
-| Conventions | Optional mid-year discounting, valuation-date stub period, leases as debt, full equity bridge |
-| Output | Excel export of all inputs and results, one-page **PDF tearsheet**, save / load assumptions (.json), shareable link |
-| Help | Explain mode with short explanations, methodology tab with all formulas and sources |
+| Residual Income | Forecast table, value bridge (book value + PV of residual income + PV of terminal value), assumptions and output |
+| Sensitivity | Value per share for cost of equity x terminal growth |
+| Trading Comps | Peer multiples (EV/Revenue, EV/EBITDA, P/E, P/Book) and implied share price |
+| Football Field | All value ranges next to the current share price |
+| Company data | Historical financials and 5-year share price |
+| Method | Formulas, Excel check and data sources |
 
-## Methodology (short)
+The sidebar lets you change the forecast period, growth, margin, payout ratio, cost of equity (CAPM or manual),
+terminal growth and the starting values - either one value for all years or year by year.
 
-- **DCF:** `FCFF = EBIT x (1 - tax) + D&A - capex - increase in NWC + one-offs`; terminal value with the Gordon growth model
-  (excluding one-offs); equity value = EV + cash - financial debt (- leases / minorities / pensions if selected).
-- **WACC:** `ke = rf + beta x ERP` (course inputs: rf 4.44%, beta 1.11, ERP 4.18%); debt at book value, equity at market value.
-- **Residual income:** `RI = NI - ke x opening book value`; value = book value + PV of RI + PV of terminal RI.
-- **Target price:** `(w x DCF + (1 - w) x comps) x (1 + ke) - dividends over 12 months`.
-- Default convention = the Excel model: end-of-year discounting, year 1 discounted one full year.
+## Method (short)
+
+- **Residual income:** `RI = net income - ke x opening book value`; book value rolls forward with net income minus
+  dividends (clean surplus).
+- **Value:** book value today + PV of RI (forecast years) + PV of terminal value `RI x (1 + g) / (ke - g)`.
+- **Cost of equity (CAPM):** `ke = rf + beta x ERP` (course inputs: rf 4.44%, beta 1.11, ERP 4.18%).
+- **Trading comps:** peer median multiples, range = 25th to 75th percentile; EV = market cap + debt - cash.
+- **Automatic assumptions** for other tickers: median of the last fiscal years, capped at realistic ranges.
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `app.py` | Streamlit user interface |
-| `valuation.py` | Calculation engine (DCF, RI, comps, Monte Carlo, reverse DCF, tornado) - no Streamlit, testable |
-| `pdf_report.py` | One-page PDF tearsheet |
-| `nke_offline.json` | Offline Nike data set with sources (used if Yahoo is unavailable) |
-| `test_valuation.py` | Automated tests: the engine must reproduce the Excel values |
+| `app.py` | Streamlit user interface and Yahoo Finance data |
+| `valuation.py` | Calculation engine (residual income, sensitivity, comps) - no Streamlit, testable |
 | `requirements.txt` | Python packages |
 | `.streamlit/config.toml` | Colour theme |
 
@@ -50,15 +46,14 @@ comparables - with Bear / Base / Bull scenarios, a 12-month target price and a B
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
-pip install pytest && pytest -q      # 12 tests, all must pass
 ```
 
 ## How we used AI
 
 The app was built for Phase III B with an LLM (Claude) as required by the assignment: the LLM wrote the code from our
-requirements, we validated every number against our manual Excel model (presets and automated tests), reported bugs from
-the live deployment back (e.g. Yahoo's profile endpoint being blocked on Streamlit Cloud, which produced a wrong share
-count) and iterated on design and functionality over several versions.
+requirements, we validated the result against our manual Excel model (Nike: $36.97), reported problems from the live
+deployment back (e.g. unrealistic automatic assumptions and Yahoo data gaps on Streamlit Cloud) and iterated on the app.
+We also tested a much larger version and deliberately went back to this focused version.
 
 ## Disclaimer
 
