@@ -476,7 +476,7 @@ WIDGET_KEYS = ["payout", "rf", "erp", "beta", "kd", "tax_lr", "da", "capex", "nw
                "w_dcf", "tg_Bear", "tg_Base", "tg_Bull", "w_tp", "dps", "buy_thr", "sell_thr", "comps_override",
                "round_tp", "mc_n", "mc_sg", "mc_sm", "mc_sw", "mc_st", "explain_mode", "cmp_ticker",
                "view_val", "view_risk", "view_mkt", "leases", "minority", "pensions", "nonop", "lease_on",
-               "mid_year", "stub_on", "val_date", "offline"]
+               "mid_year", "stub_on", "val_date"]
 for k in WIDGET_KEYS:
     if k in ss:
         ss[k] = ss[k]
